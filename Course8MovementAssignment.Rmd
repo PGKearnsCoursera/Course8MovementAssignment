@@ -1,0 +1,84 @@
+---
+title: "Movement Analysis"
+author: "PeterKearns"
+date: "February 2, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(AppliedPredictiveModeling)
+library(gbm)
+library(ElemStatLearn)
+library(mgcv)
+```
+
+## Analysis of Quality of Movement
+
+The following is a breif analysis of the methods used for prediction of quality work using data from the groupware group.  More information on the dataset and the collection of it can be found : 
+
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+## Data Preperation
+
+Because the testing data provided did not contain the classe variable I choose to split the training sete into a verification and training set after reading the data in.
+```{r dataPrep}
+movTesting = read.csv("C:/Users/peter.kearns/Documents/R_Projects/Coursera/data/pml-testing.csv")
+movTraining = read.csv("C:/Users/peter.kearns/Documents/R_Projects/Coursera/data/pml-training.csv")
+
+set.seed(1991)
+movPartition = createDataPartition(movTraining$classe, p = 3/4)[[1]]
+modelTraining = movTraining[ movPartition,]
+
+modelVerification = movTraining[-movPartition,]
+```
+This allowed me to do cross validation on my models using the data provided.
+
+
+##Model Building
+
+```{r modeling}
+str(modelTraining)
+
+smallTraining = movTraining[,colSums(is.na(movTraining))<(nrow(movTraining)/2)]
+```
+The first thing I noticed about the data was the number of variables.  Trying to perform bosting, or creating a random forest with 160 variables is a very intensive problem.  To that end i sorted out the variables that contained too many nulls to be useful.  Next I read the paper provided by the group that can be found at the above link.  
+
+The paper was very informative about the nature of the observations, and I decided that I only needed to concern myself with the raw calculations in the begining.  
+
+The variables i started with were the pitch, roll, and yaw of the belt, bar and forearm.  The Paper also emphasized the points that made good form and these alligned with the variables I chose.
+
+```{r modelCreation, results="hide"}
+movRF = train(classe~ roll_belt+pitch_belt+yaw_belt+total_accel_belt+roll_arm+pitch_forearm+yaw_forearm+roll_dumbbell+pitch_dumbbell+yaw_dumbbell,data = na.exclude(modelTraining),method="rf")
+movGBM = train(classe~ roll_belt+pitch_belt+yaw_belt+total_accel_belt+roll_arm+pitch_forearm+yaw_forearm+roll_dumbbell+pitch_dumbbell+yaw_dumbbell,data = na.exclude(modelTraining), method = "gbm")
+movLDA = train(classe~ roll_belt+pitch_belt+yaw_belt+total_accel_belt+roll_arm+pitch_forearm+yaw_forearm+roll_dumbbell+pitch_dumbbell+yaw_dumbbell,data = na.exclude(modelTraining), method = "lda")
+```
+
+I created 3 models a random forest model, a boosted model and a Latent Dirichlet allocation model.  These were then  tested against the verification set. 
+
+## Cross Validation
+```{r verification}
+rfmovPredict = predict(movRF, modelVerification)
+
+gbmmovPredict = predict(movGBM, modelVerification)
+
+ldmmovPredict = predict(movLDA, modelVerification)
+
+confusionMatrix(rfmovPredict,modelVerification$classe)$overall
+confusionMatrix(gbmmovPredict,modelVerification$classe)$overall
+confusionMatrix(ldmmovPredict,modelVerification$classe)$overall
+```
+Measuring the overall performance I found that the random forest to perform the best, and the Latent Dirichlet allocation to perform the worst.
+
+I tried combinations of these models to see if I could create better outcomes but I was unsuccessful.
+
+```{r combination}
+combinedPredict = data.frame(rfmovPredict,gbmmovPredict,classe = modelVerification$classe)
+combinedMov = train(classe~.,method="gam",data = combinedPredict)
+combPred = predict(combinedMov,combinedPredict)
+
+confusionMatrix(combPred,combinedPredict$classe)$overall
+```
+## Results
+I still found my best accuracy in the random forest model.  Using that model I succesfully predicted 16/ 20 cases in the testing set.
